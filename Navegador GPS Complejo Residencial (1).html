@@ -1,0 +1,189 @@
+<!-- ... existing code ... -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Northpointe Apartments - GPS & Ruta Interactiva</title>
+  
+  <!-- Configuración PWA / Web App para iOS (Apple) y Android -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Northpointe GPS">
+  <meta name="theme-color" content="#090d16">
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/854/854878.png">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    /* Soporte Safe Area Notch para iPhone y barras de navegación Android */
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+    }
+
+    body {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* Estilos personalizados para el mapa y animaciones */
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background-color: #0b1329;
+    }
+
+    /* Safe Area Padding para UI sobrepuesta */
+    .safe-top {
+      padding-top: calc(0.75rem + var(--sat));
+      padding-left: calc(0.75rem + var(--sal));
+      padding-right: calc(0.75rem + var(--sar));
+    }
+
+    .safe-bottom {
+      bottom: calc(1rem + var(--sab));
+      right: calc(1rem + var(--sar));
+    }
+
+    .safe-panel-bottom {
+      bottom: calc(1rem + var(--sab));
+      left: calc(1rem + var(--sal));
+      right: calc(1rem + var(--sar));
+    }
+    
+    /* Filtro oscuro tipo Google Maps Night Mode */
+    .dark-tiles .leaflet-tile {
+      filter: brightness(0.7) invert(1) contrast(1.3) hue-rotate(200deg) saturate(0.4);
+    }
+    
+    /* Animación del marcador GPS */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.33); opacity: 0.8; }
+      80%, 100% { transform: scale(2.2); opacity: 0; }
+    }
+    .gps-pulse {
+      position: relative;
+    }
+    .gps-pulse::before {
+      content: '';
+      position: absolute;
+      top: -10px; left: -10px;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background-color: rgba(59, 130, 246, 0.5);
+      animation: pulse-ring 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    }
+
+    /* Ocultar controles predeterminados de Leaflet */
+    .leaflet-control-zoom { display: none !important; }
+    .leaflet-control-attribution { 
+      background: rgba(15, 23, 42, 0.8) !important; 
+      color: #94a3b8 !important;
+      font-size: 10px;
+      border-radius: 6px;
+      margin-bottom: calc(0.5rem + var(--sab)) !important;
+      margin-left: calc(0.5rem + var(--sal)) !important;
+    }
+    .leaflet-control-attribution a { color: #60a5fa !important; }
+
+    /* Custom Scrollbar para iOS/Android drawer */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="h-full w-full overflow-hidden flex flex-col font-sans bg-slate-950 text-slate-100">
+
+  <!-- Header / Barra Superior con soporte Safe Area iOS/Android -->
+  <header class="absolute top-0 left-0 right-0 z-20 safe-top bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80 flex flex-col gap-2 shadow-2xl">
+<!-- ... existing code ... -->
+    <!-- Botones Flotantes de Control GPS y Zoom adaptados para iOS y Android -->
+    <div class="absolute safe-bottom flex flex-col gap-3 z-10">
+      <!-- Cambiar tipo de mapa (Satelite / Modo Oscuro) -->
+      <button id="toggle-style-btn" class="w-12 h-12 bg-slate-900/90 border border-slate-700 text-slate-200 rounded-2xl flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition backdrop-blur-md" title="Cambiar Vista de Mapa">
+        <i class="fa-solid fa-earth-americas text-lg text-emerald-400"></i>
+      </button>
+
+      <!-- Botón Centrar GPS -->
+      <button id="gps-btn" class="w-12 h-12 bg-blue-600 border border-blue-400 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40 hover:bg-blue-500 active:scale-95 transition" title="Mi Ubicación GPS">
+        <i class="fa-solid fa-location-crosshairs text-xl"></i>
+      </button>
+
+      <!-- Controles de Zoom manual -->
+      <div class="flex flex-col bg-slate-900/90 border border-slate-700 rounded-2xl shadow-lg backdrop-blur-md overflow-hidden">
+        <button id="zoom-in" class="w-12 h-10 text-slate-200 hover:bg-slate-800 flex items-center justify-center border-b border-slate-800 transition">
+          <i class="fa-solid fa-plus"></i>
+        </button>
+        <button id="zoom-out" class="w-12 h-10 text-slate-200 hover:bg-slate-800 flex items-center justify-center transition">
+          <i class="fa-solid fa-minus"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Panel de Navegación Activa (Card inferior responsive) -->
+    <div id="route-panel" class="hidden absolute safe-panel-bottom sm:left-6 sm:right-auto sm:w-96 z-10 bg-slate-900/95 border border-slate-700/80 rounded-2xl p-4 shadow-2xl backdrop-blur-md flex flex-col gap-3 transition-all duration-300">
+<!-- ... existing code ... -->
+  <!-- LÓGICA JAVASCRIPT CON MEJORAS DE GPS PARA SAFARI & CHROME -->
+  <script>
+    // ... existing code ...
+    // Ubicación inicial
+    createUserMarker(userCoords);
+
+    // Intentar obtener ubicación GPS real (Optimizada para iOS y Android)
+    function locateUser() {
+      showToast("Solicitando señal GPS...");
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            
+            // Verificar distancia respecto al complejo
+            const dist = getDistanceInMeters([lat, lng], COMPLEX_CENTER);
+            
+            if (dist < 3000) { // Si está a menos de 3km del complejo
+              userCoords = [lat, lng];
+              createUserMarker(userCoords);
+              map.flyTo(userCoords, 19, { animate: true, duration: 1.2 });
+              showToast("GPS conectado con alta precisión.");
+            } else {
+              showToast("Ubicación fuera del complejo. Usando Entrada como punto inicial.");
+              userCoords = MAIN_ENTRANCE;
+              createUserMarker(userCoords);
+              map.flyTo(userCoords, 18);
+            }
+          },
+          (error) => {
+            let msg = "No se pudo acceder al GPS.";
+            if (error.code === error.PERMISSION_DENIED) {
+              msg = "Permiso GPS denegado. Habilítalo en los ajustes del navegador.";
+            } else if (error.code === error.TIMEOUT) {
+              msg = "Tiempo de espera GPS agotado. Usando entrada principal.";
+            }
+            showToast(msg);
+            userCoords = MAIN_ENTRANCE;
+            createUserMarker(userCoords);
+            map.flyTo(userCoords, 18);
+          },
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+      } else {
+        showToast("GPS no soportado en este navegador.");
+      }
+    }
+
+    document.getElementById('gps-btn').addEventListener('click', locateUser);
+// ... existing code ...
